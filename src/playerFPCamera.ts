@@ -33,6 +33,8 @@ function closer(delta: number, origin: number, target: number): { direction: num
 export class PlayerFPCamera extends B.TransformNode {
     public camera: B.TargetCamera;
     public collider : B.Mesh;
+    public collisionFromBelow: boolean = true;
+    public lives = 0;
 
     private static readonly HEIGHT: number = 1.6
     private static readonly WIDTH: number = 0.8
@@ -58,8 +60,8 @@ export class PlayerFPCamera extends B.TransformNode {
             scene
         );
         this.camera.parent = this;
-        this.camera.minZ = 0.05;
-        this.camera.maxZ = 50;
+        this.camera.minZ = 0.5;
+        this.camera.maxZ = 30;
         this.camera.setTarget(new B.Vector3(0, PlayerFPCamera.HEIGHT - 4, -10));
         scene.activeCamera = this.camera;
 
@@ -87,7 +89,9 @@ export class PlayerFPCamera extends B.TransformNode {
             case "up":
                 if (this.position.y === PlayerFPCamera.HEIGHT/2) {
                     this.positionTarget.y = clamp(PlayerFPCamera.HEIGHT/2, 3.5 + PlayerFPCamera.HEIGHT/2, this.positionTarget.y + 3.5);
-                    this.collider.setAbsolutePosition(this.positionTarget)
+                    let positionYMax = this.positionTarget.clone();
+                    positionYMax.y = PlayerFPCamera.HEIGHT/2 + 1.5;
+                    this.collider.setAbsolutePosition(positionYMax) // this.positionTarget
                     this.collider.position.x = 0;
                     this.jumping.isRising = true;
                     return;
@@ -122,37 +126,54 @@ export class PlayerFPCamera extends B.TransformNode {
 
         if (!this.blockMovement) {return;}
 
-        const forceLateral = (0.1 + Math.abs(this.position.x - this.positionTarget.x)) * 12
+        const forceLateral = (0.1 + Math.abs(this.position.x - this.positionTarget.x)) * 7
         const sliding = closer(forceLateral* deltaTime, this.position.x, this.positionTarget.x);
         this.position.x = sliding.position;
         if (sliding.direction === 0) {this.collider.position.y = 0;}
         else {
-            this.collider.setAbsolutePosition(this.positionTarget)
+            let positionYMax = this.positionTarget.clone();
+            positionYMax.y = PlayerFPCamera.HEIGHT/2 + 1.5;
+            this.collider.setAbsolutePosition(positionYMax) // this.positionTarget
             this.collider.position.y = 0;
         }
 
         if (this.jumping.isRising) {
             const forceUp = ((0.7 + this.positionTarget.y - this.position.y) / 3.5) * 15
             const rising = closer(forceUp * deltaTime, this.position.y, this.positionTarget.y);
+
+            let positionYMax = this.positionTarget.clone();
+            positionYMax.y = PlayerFPCamera.HEIGHT/2 + 1.5;
+            this.collider.setAbsolutePosition(positionYMax) // this.positionTarget
+            this.collider.position.x = 0
             if (rising.direction === 0) {
                 this.jumping.isRising = false;
                 this.jumping.isFalling = true;
                 this.positionTarget.y = PlayerFPCamera.HEIGHT/2;
                 this.position.y = rising.position;
-                this.collider.position.y = 0
-            } else {
-                this.collider.setAbsolutePosition(this.positionTarget)
-                this.collider.position.x = 0
+                // this.collider.position.y = 0
             }
             this.position.y = rising.position;
         } else if (this.jumping.isFalling) {
             const gravity = (1.3 - (this.position.y - this.positionTarget.y) / 3.5) * 13
             let falling = closer(gravity * deltaTime, this.position.y, this.positionTarget.y);
+            if (falling.position > PlayerFPCamera.HEIGHT/2 + 1.5) {
+                let positionYMax = this.positionTarget.clone();
+                positionYMax.y = PlayerFPCamera.HEIGHT/2 + 1.5;
+                this.collider.setAbsolutePosition(positionYMax) // this.positionTarget
+                this.collider.position.x = 0
+            } else {
+                this.collider.position.y = 0;
+            }
             if (falling.direction === 0) {
                 this.jumping.isFalling = false;
             }
             this.position.y = falling.position;
         }
+    }
+
+    public updateMovementMobile: (mv: Movement) => void = mv => {
+        if (!(<any>window).isPlaying) {return}
+        this.handleMovement(mv)
     }
 
     public updateMovement(kbInfo: B.KeyboardInfo) {
@@ -175,16 +196,43 @@ export class PlayerFPCamera extends B.TransformNode {
             case 's':
                 this.handleMovement({type: "down"})
                 break;
+            case 'l':
+                this.lives = 200;
+                break;
+            case 'n':
+                this.lives = 0;
+                break;
         }
     }
 
     public checkCollisionWithObstacles(obstacles: B.Mesh[]): boolean {
         for (const obstacle of obstacles) {
             if (this.collider.intersectsMesh(obstacle, false)) {
-                console.log("died");
-                return true;
+                if (this.collisionFromBelow) {return false;}
+                if ( this.position.y >= 0.38 && this.position.y <= 0.42
+                  && this.duckingTarget === PlayerFPCamera.HEIGHT/2) {
+                    this.collisionFromBelow = true;
+                    return false
+                }
+                this.lives--;
+                return this.lives <= 0;
             }
         }
+
+        if (this.collisionFromBelow) {this.collisionFromBelow = false;}
+
         return false;
+    }
+
+    public restartPosition() {
+        this.positionTarget = new B.Vector3(0, PlayerFPCamera.HEIGHT/2, 0);
+        this.isDucking = false;
+        this.jumping = {isFalling: false, isRising: false}
+
+        this.position.x = this.positionTarget.x;
+        this.collider.position.x = 0;
+        this.collider.position.y = 0;
+        this.position.y = this.positionTarget.y;
+        this.lives = 1;
     }
 }

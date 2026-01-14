@@ -1,40 +1,84 @@
 import * as B from "@babylonjs/core";
+import { Obstacle } from "./obstacle";
 
-const stairLevel = [
-    [[0, 0], [0, 0], [0, 0]],
-    [[0, 0], [0, 0], [0, 0]],
-    [[0, 0], [0, 0], [0, 0]],
-    [[0, 1], [1, 0], [0, 1]],
-    [[0, 0], [0, 0], [0, 0]],
-    [[0, 0], [0, 0], [0, 0]],
-];
+function randomIntFromInterval(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+const timer = document.getElementById('timer') as HTMLElement;
 
 export class Section extends B.TransformNode {
     private scene: B.Scene;
+    private obstacle_material: B.StandardMaterial;
+    private counter = 0;
+    private counter_show = false;
+    private isPlaying: boolean = false;
 
-    public obstacles: B.TransformNode[];
-    private ground: B.Mesh;
+    private grounds: {
+        _1: B.Mesh,
+        _2: B.Mesh,
+    };
+    public obstacles: {
+        _1: Obstacle,
+        _2: Obstacle,
+    };
+    private allObstacles: Array<Obstacle> = new Array(13);
+
     private sectionLength: number;
     private sectionWidth: number;
 
-    private static readonly SPEED : number = 7;
-    private static readonly GRID = {
-        xPositions: [-1, 0, 1],
-        yHeights: [0.5, 1.5],
-    };
-    
-    constructor(scene: B.Scene, zPosition: number) {
+    public SPEED : number = 0;
+    private static readonly GAP: number = 30;
+
+    constructor(scene: B.Scene) {
         super("section", scene);
 
         this.scene = scene;
-        this.sectionLength = 50;
+        this.sectionLength = 35;
         this.sectionWidth = 3;
-        this.obstacles = [];
 
-        this.position.z = zPosition;
+        this.position.z = -this.sectionLength;
 
-        this.ground = this.createGround();
-        this.generateFromArray(stairLevel);
+        this.obstacle_material = new B.StandardMaterial("obstacle_material", this.scene);
+        this.obstacle_material.diffuseColor = new B.Color3(0.05, 0, 0);
+        this.obstacle_material.emissiveColor = new B.Color3(3, 0.3, 0.3);
+        this.obstacle_material.specularColor = new B.Color3(0, 0, 0);
+        this.obstacle_material.specularPower = 1;
+        this.obstacle_material.disableLighting = false;
+        this.obstacle_material.useEmissiveAsIllumination = true;
+
+        this.grounds = {
+            _1: this.createGround(),
+            _2: this.createGround(),
+        }
+        this.grounds._2.position.z *= -1;
+
+        for (let i = 0; i <= 12; i++) {
+            this.allObstacles[i] = new Obstacle(scene, this.obstacle_material, i);
+        }
+
+        const _1 = this.nextObstacle();
+        const _2 = this.nextObstacle(_1)
+        this.obstacles = {_1, _2}
+
+        this.obstacles._1.obstaclePosition(-Section.GAP);
+        this.obstacles._2.obstaclePosition(-Section.GAP * 2);
+    }
+
+    private nextObstacle(_1?: Obstacle): Obstacle {
+        let i1 = _1 !== undefined ? _1.ix : (this.obstacles && this.obstacles._1.ix) || -1;
+        let i2 = (this.obstacles && this.obstacles._2.ix) || -1;
+
+        let i;
+        let r;
+        while (!i) {
+            r = randomIntFromInterval(0, 12);
+            if (r !== i1 && r !== i2) {
+                i = r;
+            }
+        }
+
+        return this.allObstacles[i];
     }
 
     private createGround(): B.Mesh {
@@ -42,7 +86,7 @@ export class Section extends B.TransformNode {
             width: this.sectionWidth,
             height: this.sectionLength,
             subdivisionsX: 3,
-            subdivisionsY: 50
+            subdivisionsY: 35,
         }, this.scene);
 
         ground.parent = this;
@@ -63,54 +107,58 @@ export class Section extends B.TransformNode {
     }
 
     public updateAnimation(deltaTime: number) {
-        this.position.z += deltaTime * Section.SPEED;
-        this.checkForRecycling();
+        if (this.counter > 0) {
+            this.counter -= deltaTime;
+            timer.style.display = "flex"
+            timer.textContent = "" + Math.max(Math.ceil(this.counter), 1);
+            (<any>window).isPlaying = false;
+        } else {
+            if (this.counter_show) {
+                timer.style.display = "none"
+                this.counter_show = false;
+                (<any>window).isPlaying = true;
+                this.scene.getEngine().getRenderingCanvas()?.focus();
+            }
+            this.position.z += deltaTime * this.SPEED;
+            this.obstacles._1.position.z += deltaTime * this.SPEED;
+            this.obstacles._2.position.z += deltaTime * this.SPEED;
+            this.checkForRecycling();
+        }
     }
 
     private checkForRecycling(): void {
+        if (this.obstacles._1.position.z > 4) {
+            const newO = this.nextObstacle();
+            this.obstacles._1.hiddenPosition();
+            this.obstacles._1 = this.obstacles._2;
+            this.obstacles._2 = newO;
+
+            this.obstacles._2.obstaclePosition(-Section.GAP * 2)
+        }
+
         if (this.position.z > 0) {
-            this.recycle();
+            this.position.z = -this.sectionLength;
         }
     }
 
-    private recycle() {
+    public resetLevel() {
+        this.counter = 5;
+        this.counter_show = true;
+        this.allObstacles.forEach(o => o.hiddenPosition())
+
+        const _1 = this.nextObstacle();
+        const _2 = this.nextObstacle(_1)
+        this.obstacles = {_1, _2}
+
+        this.obstacles._1.obstaclePosition(-Section.GAP);
+        this.obstacles._2.obstaclePosition(-Section.GAP * 2);
         this.position.z = -this.sectionLength;
+
+
+        this.SPEED = 7;
     }
 
-    private generateFromArray(levelArray: number[][][]): void {
-        for (let z = 0; z < levelArray.length; z++) {
-            for (let x = 0; x < levelArray[z].length; x++) {
-                for (let y = 0; y < levelArray[z][x].length; y++) {
-                    if (levelArray[z][x][y] === 1) {
-                        this.createObstacle(
-                            { x: Section.GRID.xPositions[x]
-                            , y: Section.GRID.yHeights[y]
-                            , z: z + 1
-                            });
-                    }
-                }
-            }
-        }
-    }
+    public speedUp() {this.SPEED += 1;}
 
-    private createObstacle(positions: {x:number, y: number, z: number}): void {
-        const {x, y, z} = positions;
-        const obstacle = B.MeshBuilder.CreateBox(
-            `obstacle_${x}_${y}_${z}`,
-            {size: 1},
-            this.scene
-        );
-        obstacle.parent = this;
-
-        obstacle.position = new B.Vector3(x, y, z);
-
-        obstacle.material = new B.StandardMaterial(`obstacle_mat_${x}_${y}_${z}`, this.scene);
-        if (obstacle.material instanceof B.StandardMaterial) {
-            obstacle.material.diffuseColor = new B.Color3(1,0,0);
-            obstacle.material.specularColor = new B.Color3(0, 0, 0); // Sin brillo
-        }
-
-        obstacle.checkCollisions = true;
-        this.obstacles.push(obstacle);
-    }
+    public speedDown() {this.SPEED -= 1;}
 }

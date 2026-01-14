@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
@@ -11,15 +11,116 @@
        padding: 0;
        width: 100vw;
        height: 100vh;
+
+       font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, Adwaita Sans, Cantarell, Ubuntu, roboto, noto, helvetica, arial, sans-serif;
      }
 
      canvas {
        display: block;
      }
+
+     #menu_t {
+         position: absolute;
+         top: 0;
+         left: 0;
+         width: 100vw;
+         height: 100vh;
+         background-color: rgba(255, 255, 255, 0.7);
+         display: flex;
+         justify-content: center;
+         align-items: center;
+         z-index: 100;
+     }
+
+     .content {
+         background-color: rgba(0, 0, 0, 0.75);
+         margin: 0;
+         z-index: 100;
+         color: white;
+         margin: 0;
+         padding: 5rem 5rem;
+         display: flex;
+         flex-direction: column;
+         align-items: center;
+         gap: 2rem;
+     }
+
+     .content h1 {
+         margin: 0;
+         padding: 0;
+         text-align: center;
+     }
+
+     .content ol {
+         margin: 0;
+         padding: 2rem;
+         width: 100%;
+         display: flex;
+         flex-direction: column;
+         gap: 1.5rem;
+     }
+
+     .content li {
+         width: 100%;
+         display: flex;
+         margin: 0;
+         font-size: 1.25rem;
+         justify-content: space-between;
+     }
+
+     .content label {
+         font-size: 1.5rem;
+         margin-right: 1rem;
+     }
+
+     .content div {
+         padding: 0 2rem;
+     }
+
+     .content button {
+         border: 1px solid black;
+         background: white;
+         color: black;
+         padding: 0.5rem 1rem;
+         width: 15rem;
+         cursor: pointer;
+     }
+
+     .content input {
+         height: 2rem;
+         font-size: 1rem;
+     }
+
+     #timer {
+         position: absolute;
+         top: 0;
+         left: 0;
+         width: 100vw;
+         height: 100vh;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         font-size: 25rem;
+         color: white;
+         background: rgba(0, 0, 0, 0.25)
+     }
      
     </style>
   </head>
   <body>
+      <div id="menu_t" style="display:none">
+          <div class="content">
+              <h1>RANKING</h1>
+
+              <ol id="ranking">
+              </ol>
+
+              <input type="text" id="name" placeholder="Nombre">
+
+              <button type="button" id="play">Play</button>
+          </div>
+      </div>
+      <div id="timer" style="display:none">3</div>
     <script type="module" src="/src/app.ts"></script>
   </body>
 </html>

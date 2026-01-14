@@ -5,6 +5,8 @@ import * as B from "@babylonjs/core";
 import { PlayerFPCamera } from "./playerFPCamera";
 import { Section } from "./section";
 
+import { setupHandleInput } from "./handleInput";
+
 function createCanvas(): HTMLCanvasElement {
   //create the canvas html element and attach it to the webpage
   const canvas = document.createElement("canvas");
@@ -25,39 +27,97 @@ function homogeneousLight(scene: B.Scene) : B.HemisphericLight {
     return light;
 }
 
-function simpleBox(scene: B.Scene) : B.Mesh {
-    const box = B.Mesh.CreateBox("crate", 1, scene);
-    box.material = new B.StandardMaterial("Mat", scene);
-    if (box.material instanceof B.StandardMaterial) {
-        box.material.diffuseColor = new B.Color3(1,0,0);
+function setupNeonEffect(scene: B.Scene, camera: B.Camera): void {
+    const pipeline = new B.DefaultRenderingPipeline(
+        "neonPipeline",
+        true,
+        scene,
+        [camera]
+    );
+
+    pipeline.bloomEnabled = true;
+    pipeline.bloomThreshold = 0.0;         // 0 = todo brilla, 1 = nada brilla
+    pipeline.bloomWeight = 4.0;            // Muy alto
+    pipeline.bloomKernel = 64;             // Glow grande
+    pipeline.bloomScale = 1.0;             // Máxima escala
+
+    pipeline.imageProcessingEnabled = true;
+    pipeline.imageProcessing.contrast = 1.3;
+    pipeline.imageProcessing.exposure = 1.5;
+}
+
+const menu = document.getElementById("menu_t") as HTMLElement;
+const ranking = document.getElementById("ranking") as HTMLElement;
+const button = document.getElementById("play") as HTMLElement;
+const inputName = document.getElementById("name") as HTMLInputElement;
+let start: number | null
+let name: string | null
+let menuActive = false;
+
+let justOne = false;
+
+button.addEventListener("click", () => {
+    menu.style.display = "none"
+    document.body.style.cursor = "none"
+
+    name = inputName.value.trim();
+    start = Date.now();
+    menuActive = false;
+
+    const section = (<any>window).section as Section;
+
+    if (section) {section.resetLevel();}
+})
+const handleMenu= () => {
+    menuActive = true;
+    ranking.innerHTML = "";
+
+    if (start && name) {
+        const pts = Date.now() - start - 5000;
+        const ptsPrev = parseInt(localStorage.getItem(name) || "0")
+        localStorage.setItem(name, "" + Math.max(pts, ptsPrev))
+        start = null;
+        name = null;
     }
-    box.position = new B.Vector3(0, 0.5, -5.5);
-    return box;
+
+    const ls = { ...localStorage }
+    const rankMap = new Map();
+
+    for (const name in ls) {
+        const pts = parseInt(ls[name])
+        if (Number.isNaN(pts)) {
+            localStorage.removeItem(name);
+        } else {
+            rankMap.set(name, pts)
+        }
+    }
+
+    const rankOrdered = Array.from(rankMap).sort((a, b) => b[1] - a[1]);
+
+    for (let i = 0; i < 9 && i < rankOrdered.length; i++) {
+        const namePts = rankOrdered[i];
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${i + 1}. ${namePts[0]}</span><span>${namePts[1]}pts</span>`;
+        ranking.appendChild(li);
+    }
+
+    menu.style.display = "flex";
+    document.body.style.cursor = "auto";
+    (<any>window).section.SPEED = 0;
 }
 
-function cameraRotationFixed(scene: B.Scene) : B.FreeCamera {
-    // Need a free camera for collisions
-    const camera = new B.FreeCamera("FreeCamera", new B.Vector3(0, 1.5, 0), scene);
-    camera.setTarget(new B.Vector3(0, 0, 25));
-    //Set the ellipsoid around the camera (e.g. your player's size)
-    camera.ellipsoid = new B.Vector3(0.4, 0.75, 0.4);
-    // camera.ellipsoidOffset = new B.Vector3(0, 0.75 - camera.position.y, 0);
-    camera.minZ = 0.45;
 
-    // Configurar límites de cámara
-    camera.minZ = 0.1;
-    camera.maxZ = 200;
-
-    camera.speed = 0.5;
-
-    return camera;
-}
-
-const mkScene = (move: Move) => {
+const mkScene = () => {
     const canvas = createCanvas();
     const engine = new B.Engine(canvas, true);
     const scene = new B.Scene(engine);
     scene.clearColor = new B.Color4(0, 0, 0, 1); // Negro completamente opaco
+
+    const player = new PlayerFPCamera(scene);
+    const camera = new B.FreeCamera("debug", new B.Vector3(-0.95, 0.6, -8.8), scene);
+    camera.setTarget(new B.Vector3(2.8, 0.69, -0.3));
+
+    setupNeonEffect(scene, player.camera)
 
     homogeneousLight(scene);
 
@@ -65,71 +125,68 @@ const mkScene = (move: Move) => {
     scene.fogDensity = 0.05;  // Densidad de la niebla (ajustable)
     scene.fogColor = new B.Color3(0, 0, 0);
 
-    // const ground = groundWithSubdivisions(scene);
-    const section1 = new Section(scene, -50);
-    // const box = simpleBox(scene);
-
-    const player = new PlayerFPCamera(scene);
-    const camera = new B.FreeCamera("debug", new B.Vector3(27, 1.5, -0.3), scene);
-    camera.setTarget(new B.Vector3(2.8, 0.69, -0.3));
+    const section = new Section(scene);
+    (<any>window).section = section;
 
     scene.collisionsEnabled = true;
     scene.gravity = new B.Vector3(0, -0.8, 0);
     // box.checkCollisions = true;
 
     scene.onKeyboardObservable.add(kbInfo => {
+        if (menuActive) {return}
+        if (kbInfo.event.key.toLowerCase() === "+") {
+            section.speedUp();
+        } else if (kbInfo.event.key.toLowerCase() === "-") {
+            section.speedDown();
+        }
         player.updateMovement(kbInfo);
     })
 
     scene.onBeforeRenderObservable.add(() => {
         const deltaTime = engine.getDeltaTime() / 1000;
         player.updateAnimation(deltaTime);
-        section1.updateAnimation(deltaTime);
+        section.updateAnimation(deltaTime);
 
-        player.checkCollisionWithObstacles(section1.obstacles)
+        const died = player.checkCollisionWithObstacles(section.obstacles._1.collisions)
+        if (!died) {justOne = false;}
+        if (died && !justOne) {
+            (<any>window).isPlaying = false;
+            player.restartPosition();
+            justOne = true;
+            handleMenu()
+        }
     })
 
     //resize if the screen is resized/rotated
     window.addEventListener('resize', () => {
       engine.resize();
     });
+
+    handleMenu();
     
-    return { engine, scene };
+    return { engine, scene, player };
 }
 
-type Move = {
-  left: boolean;
-  right: boolean;
-  up: boolean;
-  down: boolean;
-};
-
 const main = () => {
-    const move: Move = {
-        left: false,
-        right: false,
-        up: false,
-        down: false,
-    }
+    const {engine, scene, player} = mkScene()
 
-    const {engine, scene} = mkScene(move)
+    setupHandleInput(player.updateMovementMobile);
 
     engine.runRenderLoop(() => {
         scene.render();
     });
 
     // hide/show the Inspector
-    window.addEventListener("keydown", ev => {
-        console.log("event");
-        // Shift+Ctrl+Alt+I
-        if (ev.shiftKey && ev.ctrlKey && ev.altKey && (ev.key === "I" || ev.key === "i")) {
-            if (scene.debugLayer.isVisible()) {
-                scene.debugLayer.hide();
-            } else {
-                scene.debugLayer.show();
-            }
-        }
-    });
+    // window.addEventListener("keydown", ev => {
+    //     // Shift+Ctrl+Alt+I
+    //     if (ev.shiftKey && ev.ctrlKey && ev.altKey && (ev.key === "I" || ev.key === "i")) {
+    //         if (scene.debugLayer.isVisible()) {
+    //             scene.debugLayer.hide();
+    //         } else {
+    //             scene.debugLayer.show();
+    //         }
+    //     }
+    // });
 }
 
 main();
